@@ -1,0 +1,784 @@
+import jieba
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
+from collections import Counter, defaultdict
+import pandas as pd
+import re
+import numpy as np
+from matplotlib.cm import get_cmap
+
+# 读取 Excel 文件
+try:
+    file_path = r"C:\Users\lenovo\Desktop\辽宁赛区参赛队伍名单公示表（5月6日-8日公示）.xlsx"
+    print(f"尝试读取Excel文件: {file_path}")
+    df = pd.read_excel(file_path)
+    print(f"成功读取Excel文件，包含{len(df)}行数据")
+except Exception as e:
+    print(f"读取Excel文件时出错: {e}")
+    print("程序将退出")
+    import sys
+    sys.exit(1)
+
+# 提取论文题目
+titles = df['论文题目'].dropna().astype(str).tolist()
+
+# 定义算法模型词典
+algorithm_models = {
+    # 机器学习基础算法
+    "线性回归": "机器学习-回归",
+    "逻辑回归": "机器学习-分类",
+    "决策树": "机器学习-树模型",
+    "随机森林": "机器学习-集成学习",
+    "梯度提升": "机器学习-集成学习",
+    "GBDT": "机器学习-集成学习",
+    "XGBoost": "机器学习-集成学习",
+    "LightGBM": "机器学习-集成学习",
+    "CatBoost": "机器学习-集成学习",
+    "AdaBoost": "机器学习-集成学习",
+    "支持向量机": "机器学习-分类/回归",
+    "SVM": "机器学习-分类/回归",
+    "朴素贝叶斯": "机器学习-分类",
+    "K近邻": "机器学习-分类/回归",
+    "KNN": "机器学习-分类/回归",
+    "K-means": "机器学习-聚类",
+    "层次聚类": "机器学习-聚类",
+    "DBSCAN": "机器学习-聚类",
+    "主成分分析": "机器学习-降维",
+    "PCA": "机器学习-降维",
+    "t-SNE": "机器学习-降维",
+    "UMAP": "机器学习-降维",
+    
+    # 深度学习模型
+    "神经网络": "深度学习-基础",
+    "DNN": "深度学习-基础",
+    "CNN": "深度学习-计算机视觉",
+    "卷积神经网络": "深度学习-计算机视觉",
+    "RNN": "深度学习-序列模型",
+    "循环神经网络": "深度学习-序列模型",
+    "LSTM": "深度学习-序列模型",
+    "长短期记忆网络": "深度学习-序列模型",
+    "GRU": "深度学习-序列模型",
+    "Transformer": "深度学习-注意力机制",
+    "注意力机制": "深度学习-注意力机制",
+    "自注意力": "深度学习-注意力机制",
+    "BERT": "深度学习-预训练语言模型",
+    "GPT": "深度学习-预训练语言模型",
+    "LLM": "深度学习-大语言模型",
+    "大语言模型": "深度学习-大语言模型",
+    "ChatGPT": "深度学习-大语言模型",
+    "扩散模型": "深度学习-生成模型",
+    "Diffusion": "深度学习-生成模型",
+    "GAN": "深度学习-生成模型",
+    "生成对抗网络": "深度学习-生成模型",
+    "VAE": "深度学习-生成模型",
+    "变分自编码器": "深度学习-生成模型",
+    "自编码器": "深度学习-表示学习",
+    "ResNet": "深度学习-计算机视觉",
+    "残差网络": "深度学习-计算机视觉",
+    "YOLO": "深度学习-目标检测",
+    "Faster R-CNN": "深度学习-目标检测",
+    "U-Net": "深度学习-图像分割",
+    "ViT": "深度学习-视觉Transformer",
+    "视觉Transformer": "深度学习-视觉Transformer",
+    
+    # 强化学习
+    "强化学习": "强化学习",
+    "RL": "强化学习",
+    "Q学习": "强化学习",
+    "DQN": "强化学习",
+    "策略梯度": "强化学习",
+    "PPO": "强化学习",
+    
+    # 图模型
+    "图神经网络": "图学习",
+    "GNN": "图学习",
+    "GCN": "图学习",
+    "图卷积网络": "图学习",
+    "GAT": "图学习",
+    "GraphSAGE": "图学习",
+    
+    # 推荐系统
+    "协同过滤": "推荐系统",
+    "矩阵分解": "推荐系统",
+    "SVD": "推荐系统/矩阵分解",
+    "奇异值分解": "推荐系统/矩阵分解",
+    "FM": "推荐系统",
+    "因子分解机": "推荐系统",
+    "DeepFM": "推荐系统",
+    "Wide&Deep": "推荐系统",
+    
+    # 时间序列
+    "ARIMA": "时间序列",
+    "SARIMA": "时间序列",
+    "Prophet": "时间序列",
+    "指数平滑": "时间序列",
+    
+    # 自然语言处理
+    "Word2Vec": "NLP-词嵌入",
+    "GloVe": "NLP-词嵌入",
+    "FastText": "NLP-词嵌入",
+    "TextCNN": "NLP-文本分类",
+    "BiLSTM": "NLP-序列标注",
+    "CRF": "NLP-序列标注",
+    "条件随机场": "NLP-序列标注",
+    "命名实体识别": "NLP-序列标注",
+    "NER": "NLP-序列标注",
+    "文本分类": "NLP-文本分类",
+    "情感分析": "NLP-文本分类",
+    "文本摘要": "NLP-文本生成",
+    "机器翻译": "NLP-文本生成",
+    "问答系统": "NLP-问答",
+    "QA": "NLP-问答",
+    
+    # 其他
+    "遗传算法": "进化算法",
+    "粒子群优化": "进化算法",
+    "蚁群算法": "进化算法",
+    "模拟退火": "优化算法",
+    "贝叶斯优化": "优化算法",
+    "马尔可夫链": "概率图模型",
+    "隐马尔可夫": "概率图模型",
+    "HMM": "概率图模型",
+    "贝叶斯网络": "概率图模型",
+    "知识图谱": "知识表示",
+    "知识推理": "知识表示",
+    "联邦学习": "分布式学习",
+    "迁移学习": "迁移学习",
+    "元学习": "元学习",
+    "小样本学习": "小样本学习",
+    "零样本学习": "零样本学习",
+    "自监督学习": "自监督学习",
+    "对比学习": "对比学习",
+    "多模态": "多模态学习",
+    "多任务学习": "多任务学习",
+    "主动学习": "主动学习"
+}
+
+# 定义函数：从文本中提取算法模型
+def extract_algorithms(text):
+    """从文本中提取算法模型名称"""
+    found_algorithms = []
+    # 直接匹配算法名称
+    for algo_name in algorithm_models.keys():
+        if algo_name in text:
+            found_algorithms.append(algo_name)
+    
+    # 处理可能的英文缩写和变体
+    text_lower = text.lower()
+    for algo_name in algorithm_models.keys():
+        # 如果算法名称是英文缩写，尝试匹配不同大小写形式
+        if algo_name.isupper() and len(algo_name) <= 5 and algo_name.lower() in text_lower and algo_name not in found_algorithms:
+            found_algorithms.append(algo_name)
+    
+    return found_algorithms
+
+# 自定义停用词
+stopwords = set([
+    # 结构性词汇
+    "的", "和", "与", "及", "在", "为", "中", "对", "以", "从", "通过", "对其",
+
+    # 学术泛用词
+    "研究", "分析", "探究", "构建", "设计", "实现", "系统", "平台", "开发",
+    "应用", "探索", "方案", "方法", "路径", "思路", "基于", "一种", "优化", "结构",
+    "综述", "概况", "进展", "验证", "评估", "比较", "水平", "标准",
+    "运用", "采用", "选择", "结合",
+    "实证", "演化", "演进", "耦合", "治理", "视角", "综合", "联动", "评价", # 新增 (来自词云)
+    "驱动", "配置", # 新增 (来自词云)
+
+    # 常见描述词
+    "现状", "趋势", "影响", "问题", "意义", "能力", "背景", "经验", "效果", "提升", "创新", "融合", "增强", "促进",
+    "发展", "未来", "效应", "高质量", "作用", "目标", "行为", "意愿", "绩效", "生产力", "新质", # 新增 (来自词云)
+    "关系", "价值", "核心", "关键", "逻辑", "精准", "数字", "时空", # 新增 (来自词云, "数字"和"时空"在用作通用描述时)
+
+    # 宏观或泛领域词（不涉及具体模型）
+    "城市", "乡村", "文化", "社会", "生态", "地区", "行业", "技术", "市场", "企业", "农业", "旅游",
+    "能源", "交通", "环境", "教育", "健康", "经济", "大学生", "中国", "居民", "模式", "现象", "角色", # "中国"可被"我国"覆盖，也可都保留
+    "赋能", "协同", "双碳", "低碳", "共享", "振兴", "可视化", # 新增 (来自词云)
+    # 根据词云，可以考虑添加更具体的领域词，但这取决于您是否希望在结果中看到这些领域背景，例如："新能源"、"碳排放"、"糖尿病"、"农户"、"电商"、"物流"、"汽车"等。
+    # 如果目标是纯粹提取模型，这些也可以考虑作为停用词。为保持通用性，暂未大规模添加具体行业领域词。
+
+    # 泛技术词（不是模型）
+    "智能", "人工", "网络", "信息", "框架", "工具", "资源", "对象",
+    "机制", "分类", "控制", "识别", "建模", "预测",
+    "统计", "动态", "过程", # 注意：移除了"算法"，因为它可能是模型名称的一部分
+
+    # 与模型混淆但非模型（辅助词）
+    "因素", "因子", "变量", "结果", "实验", "数据", "指标", "方案", "架构", "特征", "处理",
+    "参数",
+
+    # 文档结构与组成部分
+    "引言", "结论", "摘要", "参考文献", "附录",
+
+    # 地域/专有名词 (新增分类，根据词云和常见情况)
+    "辽宁省", "我国", # 新增 (来自词云)
+    # 您可以根据您的文本数据，添加其他出现频率高且非模型名称的省份、城市、国家或特定机构名。
+])
+
+# 分词并过滤停用词
+tokenized_titles = [" ".join([word for word in jieba.lcut(title) if word not in stopwords and len(word) > 1])
+                    for title in titles]
+
+# 一、关键词词云
+text = " ".join(tokenized_titles)
+
+plt.rcParams["font.sans-serif"] = ["SimHei"]  # 中文支持
+wordcloud = WordCloud(font_path="simhei.ttf", width=800, height=400, background_color='white').generate(text)
+plt.figure(figsize=(12, 6))
+plt.imshow(wordcloud, interpolation="bilinear")
+plt.axis("off")
+plt.title("词云：论文题目关键词", fontsize=16)
+plt.show()
+
+# 二、提取每篇论文中的算法模型
+paper_algorithms = []
+for title in titles:
+    algos = extract_algorithms(title)
+    paper_algorithms.append(algos)
+
+# 统计算法模型出现频率
+algo_counter = Counter()
+for algos in paper_algorithms:
+    for algo in algos:
+        algo_counter[algo] += 1
+
+# 按类别统计算法模型
+category_counter = defaultdict(int)
+for algo, count in algo_counter.items():
+    category = algorithm_models[algo]
+    category_counter[category] += count
+
+# 三、可视化算法模型分布
+# 3.1 算法模型频率条形图
+if algo_counter:
+    plt.figure(figsize=(14, 8))
+    top_algos = algo_counter.most_common(15)  # 取前15个算法
+    algo_names, algo_counts = zip(*top_algos) if top_algos else ([], [])
+    
+    plt.bar(algo_names, algo_counts, color='skyblue')
+    plt.title("论文中最常用的算法模型", fontsize=16)
+    plt.xlabel("算法模型名称")
+    plt.ylabel("出现次数")
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    plt.show()
+
+    # 3.2 算法类别饼图
+    if category_counter:
+        plt.figure(figsize=(12, 10))
+        categories, category_counts = zip(*sorted(category_counter.items(), key=lambda x: x[1], reverse=True))
+        
+        # 使用饼图展示算法类别分布
+        plt.pie(category_counts, labels=categories, autopct='%1.1f%%', 
+                startangle=90, shadow=True, 
+                wedgeprops={'edgecolor': 'white', 'linewidth': 1},
+                textprops={'fontsize': 12})
+        plt.axis('equal')  # 保证饼图是圆形
+        plt.title("论文中算法模型类别分布", fontsize=16)
+        plt.tight_layout()
+        plt.show()
+else:
+    print("未在论文题目中找到算法模型")
+
+# 四、TF-IDF 向量化
+vectorizer = TfidfVectorizer()
+X = vectorizer.fit_transform(tokenized_titles)
+
+# 五、KMeans 聚类
+k = 5
+kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+
+# 可视化聚类过程
+# 5.1 使用肘部法则确定最佳聚类数
+plt.figure(figsize=(10, 6))
+inertias = []
+k_range = range(1, 11)
+for i in k_range:
+    km = KMeans(n_clusters=i, random_state=42, n_init=10)
+    km.fit(X)
+    inertias.append(km.inertia_)
+
+plt.plot(k_range, inertias, 'o-', color='blue')
+plt.xlabel('聚类数量 k')
+plt.ylabel('惯性值 (Inertia)')
+plt.title('肘部法则确定最佳聚类数')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+# 5.1.2 使用层次聚类树状图可视化聚类结构
+from scipy.cluster.hierarchy import dendrogram, linkage
+from scipy.spatial.distance import pdist, squareform
+
+# 由于数据量可能较大，随机选择最多100个样本进行层次聚类可视化
+sample_size = min(100, X.shape[0])
+indices = np.random.choice(X.shape[0], sample_size, replace=False)
+X_sample = X[indices].toarray()
+
+# 计算样本间的距离矩阵
+dist_matrix = pdist(X_sample, metric='euclidean')
+
+# 使用Ward方法进行层次聚类
+linked = linkage(dist_matrix, method='ward')
+
+# 绘制树状图
+plt.figure(figsize=(16, 8))
+dendrogram(
+    linked,
+    truncate_mode='level',
+    p=5,  # 只显示最后5层
+    show_leaf_counts=True,
+    leaf_rotation=90.,
+    leaf_font_size=12.,
+    show_contracted=True,
+)
+plt.title('层次聚类树状图', fontsize=16)
+plt.xlabel('样本索引或聚类', fontsize=12)
+plt.ylabel('距离', fontsize=12)
+plt.axhline(y=np.mean(linked[:, 2]), color='r', linestyle='--', label=f'建议聚类阈值')
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# 输出层次聚类的建议
+print(f"\n层次聚类分析:")
+print(f"根据树状图结构，可能的聚类数量范围: {3}-{7}")
+print(f"当前选择的聚类数量: {k}")
+if k >= 3 and k <= 7:
+    print(f"当前聚类数量在合理范围内。")
+else:
+    print(f"当前聚类数量可能需要调整，建议在{3}-{7}之间选择。")
+
+# 5.2 执行KMeans聚类
+kmeans.fit(X)
+labels = kmeans.labels_
+centers = kmeans.cluster_centers_
+
+# 5.3 使用降维方法可视化聚类结果
+from sklearn.manifold import TSNE
+from sklearn import metrics
+from sklearn.decomposition import PCA
+from mpl_toolkits.mplot3d import Axes3D
+
+# 5.3.1 t-SNE降维到2D
+# 添加错误处理，确保t-SNE参数设置正确
+try:
+    # 确保perplexity参数小于样本数量
+    n_samples = X.shape[0]
+    perplexity_value = min(30, max(5, n_samples // 5))  # 更保守的perplexity设置
+    if perplexity_value >= n_samples:
+        perplexity_value = max(1, n_samples - 1)  # 确保perplexity < n_samples
+        
+    print(f"使用t-SNE降维，样本数量: {n_samples}, perplexity值: {perplexity_value}")
+    tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity_value)
+    X_tsne = tsne.fit_transform(X.toarray())
+    
+    # 可视化t-SNE降维结果
+    plt.figure(figsize=(12, 10))
+    cmap = plt.cm.get_cmap('tab10', k)
+    
+    # 绘制散点图
+    for i in range(k):
+        plt.scatter(X_tsne[labels == i, 0], X_tsne[labels == i, 1], 
+                    c=[cmap(i)], label=f'聚类 {i+1}', alpha=0.7, s=80)
+    
+    # 添加聚类中心（在t-SNE空间中可能不准确，但有助于理解）
+    # 对于聚类中心，使用单独的t-SNE实例，确保perplexity参数设置正确
+    if k > 1:  # 只有当聚类数大于1时才尝试可视化聚类中心
+        try:
+            # 对于聚类中心，perplexity必须小于样本数量（即聚类数k）
+            center_perplexity = max(1, min(k-1, 5))  # 确保perplexity在有效范围内且小于k
+            print(f"聚类中心t-SNE降维使用perplexity={center_perplexity}, 聚类数k={k}")
+            
+            # 如果聚类数太少，可以使用PCA代替t-SNE
+            if k <= 3:
+                print("聚类数量较少，使用PCA代替t-SNE处理聚类中心")
+                pca_mini = PCA(n_components=2)
+                centers_tsne = pca_mini.fit_transform(centers)
+            else:
+                tsne_centers = TSNE(n_components=2, random_state=42, perplexity=center_perplexity)
+                centers_tsne = tsne_centers.fit_transform(centers)
+                
+            plt.scatter(centers_tsne[:, 0], centers_tsne[:, 1], 
+                        c='black', s=200, alpha=0.5, marker='x', label='聚类中心')
+        except Exception as e:
+            print(f"无法对聚类中心进行降维: {e}")
+            print("跳过聚类中心的可视化，仅显示数据点")
+    else:
+        print("聚类数量为1，跳过聚类中心的可视化")
+        
+    plt.title('t-SNE降维可视化聚类结果 (2D)', fontsize=16)
+    plt.legend(fontsize=12)
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    plt.show()
+    
+except Exception as e:
+    print(f"t-SNE降维过程中出现错误: {e}")
+    print("跳过t-SNE可视化，继续执行后续代码")
+
+# 5.3.2 PCA降维到3D进行可视化
+# 使用PCA降维到3维
+pca = PCA(n_components=3)
+X_pca = pca.fit_transform(X.toarray())
+
+# 创建3D图
+fig = plt.figure(figsize=(14, 12))
+ax = fig.add_subplot(111, projection='3d')
+
+# 绘制每个聚类的点
+for i in range(k):
+    ax.scatter(X_pca[labels == i, 0], X_pca[labels == i, 1], X_pca[labels == i, 2],
+               c=[cmap(i)], label=f'聚类 {i+1}', alpha=0.7, s=80)
+
+# 添加聚类中心
+centers_pca = pca.transform(centers)
+ax.scatter(centers_pca[:, 0], centers_pca[:, 1], centers_pca[:, 2],
+           c='black', s=200, alpha=0.8, marker='x', label='聚类中心')
+
+# 设置图表属性
+ax.set_title('PCA降维可视化聚类结果 (3D)', fontsize=16)
+ax.set_xlabel('主成分1')
+ax.set_ylabel('主成分2')
+ax.set_zlabel('主成分3')
+ax.legend(fontsize=12)
+
+# 添加解释文本
+plt.figtext(0.5, 0.01, 
+           f'PCA解释方差比例: {pca.explained_variance_ratio_[0]:.2f}, {pca.explained_variance_ratio_[1]:.2f}, {pca.explained_variance_ratio_[2]:.2f}',
+           ha='center', fontsize=12)
+
+# 设置视角
+ax.view_init(elev=30, azim=45)
+plt.tight_layout()
+plt.show()
+
+# 输出PCA解释方差比例
+print(f"\nPCA解释方差比例:")
+print(f"主成分1: {pca.explained_variance_ratio_[0]:.4f}")
+print(f"主成分2: {pca.explained_variance_ratio_[1]:.4f}")
+print(f"主成分3: {pca.explained_variance_ratio_[2]:.4f}")
+print(f"累计解释方差: {sum(pca.explained_variance_ratio_):.4f}")
+
+# 5.4 评估聚类质量
+# 计算轮廓系数
+silhouette_avg = metrics.silhouette_score(X, labels)
+print(f"\n聚类质量评估:")
+print(f"轮廓系数 (Silhouette Coefficient): {silhouette_avg:.3f}")
+print(f"惯性值 (Inertia): {kmeans.inertia_:.3f}")
+
+# 计算每个聚类的样本数量
+cluster_sizes = np.bincount(labels)
+
+# 可视化聚类大小分布
+plt.figure(figsize=(10, 6))
+plt.bar(range(1, k+1), cluster_sizes, color=cmap(range(k)))
+plt.xlabel('聚类编号')
+plt.ylabel('样本数量')
+plt.title('各聚类样本数量分布')
+plt.xticks(range(1, k+1))
+plt.grid(True, axis='y', linestyle='--', alpha=0.7)
+plt.tight_layout()
+plt.show()
+
+# 5.5 绘制轮廓分析图
+# 计算每个样本的轮廓系数
+silhouette_values = metrics.silhouette_samples(X, labels)
+
+# 创建轮廓图
+plt.figure(figsize=(12, 8))
+y_lower = 10
+
+# 为每个聚类绘制轮廓图
+for i in range(k):
+    # 获取当前聚类的轮廓系数
+    ith_cluster_silhouette_values = silhouette_values[labels == i]
+    ith_cluster_silhouette_values.sort()
+    
+    size_cluster_i = ith_cluster_silhouette_values.shape[0]
+    y_upper = y_lower + size_cluster_i
+    
+    # 填充轮廓图
+    color = cmap(i)
+    plt.fill_betweenx(np.arange(y_lower, y_upper),
+                     0, ith_cluster_silhouette_values,
+                     facecolor=color, edgecolor=color, alpha=0.7)
+    
+    # 标记聚类标签
+    plt.text(-0.05, y_lower + 0.5 * size_cluster_i, f'聚类 {i+1}')
+    
+    # 计算下一个聚类的y_lower
+    y_lower = y_upper + 10
+
+# 添加平均轮廓系数的垂直线
+plt.axvline(x=silhouette_avg, color="red", linestyle="--")
+plt.text(silhouette_avg + 0.02, plt.ylim()[0] + 0.05 * (plt.ylim()[1] - plt.ylim()[0]), 
+         f'平均轮廓系数: {silhouette_avg:.3f}', color='red')
+
+plt.title('聚类轮廓分析', fontsize=16)
+plt.xlabel('轮廓系数值')
+plt.ylabel('聚类标签')
+plt.yticks([])
+plt.xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
+plt.grid(True, linestyle='--', alpha=0.7)
+plt.tight_layout()
+plt.show()
+
+# 5.6 可视化聚类中心特征
+# 获取TF-IDF特征名称
+feature_names = vectorizer.get_feature_names_out()
+
+# 为每个聚类找出最重要的特征
+top_features_per_cluster = []
+for i in range(k):
+    # 获取聚类中心的特征权重
+    center = centers[i]
+    # 获取前10个最重要的特征索引
+    top_indices = center.argsort()[-10:][::-1]
+    # 获取对应的特征名称和权重
+    top_features = [(feature_names[idx], center[idx]) for idx in top_indices]
+    top_features_per_cluster.append(top_features)
+
+# 可视化每个聚类的特征重要性
+fig, axs = plt.subplots(3, 2, figsize=(16, 14))
+axs = axs.flatten()
+
+for i in range(k):
+    if i < len(axs):
+        feature_names_i, feature_weights_i = zip(*top_features_per_cluster[i])
+        axs[i].barh(feature_names_i, feature_weights_i, color=cmap(i))
+        axs[i].set_title(f'聚类 {i+1} 的特征重要性', fontsize=14)
+        axs[i].set_xlabel('特征权重')
+        axs[i].invert_yaxis()  # 从上到下显示特征
+
+# 删除多余子图
+for j in range(k, len(axs)):
+    fig.delaxes(axs[j])
+
+plt.tight_layout()
+plt.show()
+
+# 六、聚类结果中的算法模型分析
+# 6.1 为每个聚类创建标题词云
+fig, axs = plt.subplots(3, 2, figsize=(16, 14))
+axs = axs.flatten()
+
+# 为每个聚类收集标题文本
+cluster_titles = [[] for _ in range(k)]
+for idx, label in enumerate(labels):
+    cluster_titles[label].append(titles[idx])
+
+# 为每个聚类生成词云
+for i in range(k):
+    if i < len(axs):
+        if cluster_titles[i]:
+            # 合并该聚类的所有标题
+            text = " ".join(cluster_titles[i])
+            # 分词并过滤停用词
+            words = [word for word in jieba.lcut(text) if word not in stopwords and len(word) > 1]
+            text = " ".join(words)
+            
+            if text.strip():
+                # 生成词云
+                cluster_wordcloud = WordCloud(font_path="simhei.ttf", width=400, height=200, 
+                                             background_color='white', max_words=50).generate(text)
+                axs[i].imshow(cluster_wordcloud, interpolation="bilinear")
+                axs[i].set_title(f'聚类 {i+1} 的主题词云', fontsize=14)
+                axs[i].axis("off")
+            else:
+                axs[i].text(0.5, 0.5, "该聚类中无足够文本生成词云", 
+                          horizontalalignment='center', verticalalignment='center',
+                          transform=axs[i].transAxes, fontsize=14)
+        else:
+            axs[i].text(0.5, 0.5, "该聚类为空", 
+                      horizontalalignment='center', verticalalignment='center',
+                      transform=axs[i].transAxes, fontsize=14)
+
+# 删除多余子图
+for j in range(k, len(axs)):
+    fig.delaxes(axs[j])
+
+plt.tight_layout()
+plt.show()
+
+# 6.2 分析每个聚类中的算法模型
+cluster_algorithms = [[] for _ in range(k)]
+for idx, label in enumerate(labels):
+    for algo in paper_algorithms[idx]:
+        cluster_algorithms[label].append(algo)
+
+# 可视化每个聚类中的算法模型分布
+fig, axs = plt.subplots(3, 2, figsize=(16, 14))
+axs = axs.flatten()
+
+for i in range(k):
+    counter = Counter(cluster_algorithms[i])
+    most_common = counter.most_common(10)
+    if most_common:
+        words, freqs = zip(*most_common)
+        axs[i].bar(words, freqs, color=plt.cm.tab10(i/k))
+        axs[i].set_title(f'聚类 {i+1} 中的算法模型分布', fontsize=14)
+        axs[i].tick_params(axis='x', rotation=45)
+    else:
+        axs[i].text(0.5, 0.5, "该聚类中未发现算法模型", 
+                  horizontalalignment='center', verticalalignment='center',
+                  transform=axs[i].transAxes, fontsize=14)
+
+# 删除多余子图
+for j in range(k, len(axs)):
+    fig.delaxes(axs[j])
+
+plt.tight_layout()
+plt.show()
+
+# 七、高频词统计 + 可视化
+fig, axs = plt.subplots(3, 2, figsize=(15, 12))
+axs = axs.flatten()
+
+cluster_words = [[] for _ in range(k)]
+for idx, label in enumerate(labels):
+    words = [word for word in jieba.lcut(titles[idx]) if word not in stopwords and len(word) > 1]
+    cluster_words[label].extend(words)
+
+for i in range(k):
+    counter = Counter(cluster_words[i])
+    most_common = counter.most_common(10)
+    if most_common:
+        words, freqs = zip(*most_common)
+        axs[i].bar(words, freqs, color='skyblue')
+        axs[i].set_title(f'类别 {i+1} 高频词', fontsize=14)
+        axs[i].tick_params(axis='x', rotation=45)
+
+# 删除多余子图
+for j in range(k, len(axs)):
+    fig.delaxes(axs[j])
+
+plt.tight_layout()
+plt.show()
+
+# 八、聚类相似性分析
+# 计算聚类之间的相似性
+from sklearn.metrics.pairwise import cosine_similarity
+
+# 计算聚类中心之间的余弦相似度
+cluster_similarity = cosine_similarity(centers)
+
+# 绘制聚类相似性热力图
+plt.figure(figsize=(10, 8))
+plt.imshow(cluster_similarity, cmap='YlOrRd', interpolation='nearest')
+
+# 添加数值标签
+for i in range(k):
+    for j in range(k):
+        plt.text(j, i, f'{cluster_similarity[i, j]:.2f}', 
+                 ha='center', va='center', 
+                 color='black' if cluster_similarity[i, j] < 0.7 else 'white')
+
+plt.colorbar(label='余弦相似度')
+plt.title('聚类中心相似性热力图', fontsize=16)
+plt.xlabel('聚类编号')
+plt.ylabel('聚类编号')
+plt.xticks(range(k), [f'聚类 {i+1}' for i in range(k)])
+plt.yticks(range(k), [f'聚类 {i+1}' for i in range(k)])
+plt.tight_layout()
+plt.show()
+
+# 九、聚类过程可视化总结
+# 创建一个总结性的可视化，展示聚类过程的完整流程
+from matplotlib.gridspec import GridSpec
+
+# 创建一个大图，包含多个子图
+fig = plt.figure(figsize=(20, 16))
+gs = GridSpec(3, 3, figure=fig)
+
+# 1. 肘部法则图
+ax1 = fig.add_subplot(gs[0, 0])
+ax1.plot(k_range, inertias, 'o-', color='blue')
+ax1.set_xlabel('聚类数量 k')
+ax1.set_ylabel('惯性值 (Inertia)')
+ax1.set_title('肘部法则确定最佳聚类数')
+ax1.grid(True)
+
+# 2. t-SNE降维图
+ax2 = fig.add_subplot(gs[0, 1:])
+for i in range(k):
+    ax2.scatter(X_tsne[labels == i, 0], X_tsne[labels == i, 1], 
+                c=[cmap(i)], label=f'聚类 {i+1}', alpha=0.7, s=60)
+ax2.scatter(centers_tsne[:, 0], centers_tsne[:, 1], 
+            c='black', s=150, alpha=0.5, marker='x', label='聚类中心')
+ax2.set_title('t-SNE降维可视化聚类结果')
+ax2.legend(fontsize=10)
+ax2.grid(True, linestyle='--', alpha=0.7)
+
+# 3. 聚类大小分布
+ax3 = fig.add_subplot(gs[1, 0])
+ax3.bar(range(1, k+1), cluster_sizes, color=cmap(range(k)))
+ax3.set_xlabel('聚类编号')
+ax3.set_ylabel('样本数量')
+ax3.set_title('各聚类样本数量分布')
+ax3.set_xticks(range(1, k+1))
+ax3.grid(True, axis='y', linestyle='--', alpha=0.7)
+
+# 4. 聚类相似性热力图
+ax4 = fig.add_subplot(gs[1, 1:])
+im = ax4.imshow(cluster_similarity, cmap='YlOrRd', interpolation='nearest')
+for i in range(k):
+    for j in range(k):
+        ax4.text(j, i, f'{cluster_similarity[i, j]:.2f}', 
+                 ha='center', va='center', 
+                 color='black' if cluster_similarity[i, j] < 0.7 else 'white')
+ax4.set_title('聚类中心相似性热力图')
+ax4.set_xlabel('聚类编号')
+ax4.set_ylabel('聚类编号')
+ax4.set_xticks(range(k))
+ax4.set_yticks(range(k))
+fig.colorbar(im, ax=ax4, label='余弦相似度')
+
+# 5. 算法模型分布
+ax5 = fig.add_subplot(gs[2, :])
+top_algos_overall = algo_counter.most_common(10)
+if top_algos_overall:
+    algo_names, algo_counts = zip(*top_algos_overall)
+    bars = ax5.bar(algo_names, algo_counts, color='skyblue')
+    ax5.set_title('论文中最常用的算法模型')
+    ax5.set_xlabel('算法模型名称')
+    ax5.set_ylabel('出现次数')
+    ax5.set_xticklabels(algo_names, rotation=45, ha='right')
+    
+    # 在柱状图上添加数值标签
+    for bar in bars:
+        height = bar.get_height()
+        ax5.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                f'{height:.0f}', ha='center', va='bottom')
+else:
+    ax5.text(0.5, 0.5, "未在论文题目中找到算法模型", 
+              horizontalalignment='center', verticalalignment='center',
+              transform=ax5.transAxes, fontsize=14)
+
+plt.suptitle('聚类分析过程与结果总结', fontsize=20)
+plt.tight_layout()
+plt.subplots_adjust(top=0.92)
+plt.show()
+
+# 十、输出总结报告
+print("\n论文算法模型分析总结：")
+print(f"共分析了 {len(titles)} 篇论文题目")
+print(f"发现使用算法模型的论文数量: {sum(1 for algos in paper_algorithms if algos)}")
+print(f"共发现 {len(algo_counter)} 种不同的算法模型")
+
+if algo_counter:
+    print("\n最常用的5种算法模型：")
+    for algo, count in algo_counter.most_common(5):
+        print(f"- {algo}: {count}篇论文 ({count/len(titles)*100:.1f}%)")
+    
+    print("\n最常用的算法类别：")
+    for category, count in sorted(category_counter.items(), key=lambda x: x[1], reverse=True)[:3]:
+        print(f"- {category}: {count}次出现")
+        
+    print("\n聚类分析结果：")
+    print(f"- 最佳聚类数量: {k} (根据肘部法则和层次聚类分析)")
+    print(f"- 聚类质量评估 - 轮廓系数: {silhouette_avg:.3f}")
+    print(f"- 最相似的聚类对: 聚类 {np.unravel_index(np.argmax(cluster_similarity - np.eye(k)), cluster_similarity.shape)[0] + 1} 和 聚类 {np.unravel_index(np.argmax(cluster_similarity - np.eye(k)), cluster_similarity.shape)[1] + 1}, 相似度: {np.max(cluster_similarity - np.eye(k)):.3f}")
+else:
+    print("未在论文题目中找到算法模型，建议检查算法模型词典或扩展搜索范围到论文摘要或全文。")
